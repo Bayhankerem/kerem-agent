@@ -1,142 +1,57 @@
+// Kerem Agent - Cloudflare API Bağlantılı Arayüz Yöneticisi (V 1.2)
 
-const API_URL = "https://kerem-agent-api.kbayhan78.workers.dev";
+const STORAGE_KEY = "kerem_agent_sessions_v1";
+const CLOUDFLARE_API_URL = "https://SENIN-WORKER-ADRESIN.workers.dev"; // Burayı kendi Cloudflare URL'inle güncelle
 
-const form = document.getElementById("chatForm");
-const input = document.getElementById("prompt");
-const messages = document.getElementById("messages");
-const welcome = document.getElementById("welcome");
-const statusLine = document.getElementById("status");
-
-let history = [];
-let chats = JSON.parse(localStorage.getItem("kerem_chats") || "[]");
-
-function addMessage(content, role) {
-  const el = document.createElement("div");
-  el.className = "message " + role;
-  el.textContent = content;
-  messages.appendChild(el);
-  el.scrollIntoView({ behavior: "smooth" });
-}
-
-function saveChats() {
-  localStorage.setItem("kerem_chats", JSON.stringify(chats));
-}
-
-function saveCurrentChat() {
-  if (!history.length) return;
-
-  const chat = {
-    id: Date.now(),
-    title: history.find(m => m.role === "user")?.content.slice(0, 35) || "Yeni sohbet",
-    messages: history
-  };
-
-  chats.unshift(chat);
-  chats = chats.slice(0, 30);
-  saveChats();
-}
-
-form.addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const text = input.value.trim();
-  if (!text) return;
-
-  welcome.style.display = "none";
-
-  addMessage(text, "user");
-  history.push({ role: "user", content: text });
-
-  input.value = "";
-  statusLine.textContent = "KEREM AGENT düşünüyor...";
-
-  try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Sunucu hatası");
-    }
-
-    if (!data.reply) {
-      throw new Error("Yanıt alınamadı.");
-    }
-
-    history.push({
-      role: "assistant",
-      content: data.reply
-    });
-
-    addMessage(data.reply, "agent");
-    saveCurrentChat();
-
-    statusLine.textContent = "KEREM AGENT hazır";
-
-  } catch (error) {
-    addMessage("Hata: " + error.message, "agent");
-    statusLine.textContent = "Bağlantı hatası";
+const QUICK_PROMPTS = [
+  {
+    title: "Çalışma Planı Hazırla",
+    prompt: "Bugün için odaklanmam gereken konuları ve kısa bir çalışma planı çıkar."
+  },
+  {
+    title: "Teknik Konuyu Özetle",
+    prompt: "Karmaşık bir teknik konuyu maddeler halinde ve net örneklerle özetle."
+  },
+  {
+    title: "Kod / Mantık İncele",
+    prompt: "Yazdığım kodu veya mantık kurgusunu hatalar ve iyileştirmeler açısından değerlendir."
   }
-});
+];
 
-input.addEventListener("input", () => {
-  input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 130) + "px";
-});
+const state = {
+  sessions: [],
+  activeSessionId: null,
+  isGenerating: false,
+  aiEndpoint: CLOUDFLARE_API_URL.trim()
+};
 
-document.querySelectorAll(".suggestion").forEach(button => {
-  button.addEventListener("click", () => {
-    input.value = button.textContent.trim();
-    form.requestSubmit();
-  });
-});
+const dom = {
+  main: document.querySelector("main"),
+  section: document.querySelector("main section"),
+  aside: document.querySelector("aside"),
+  statusText: document.querySelector("aside span")?.parentElement || null,
+  liveRegion: document.querySelector('[aria-live="polite"]')
+};
 
-document.getElementById("newChat").addEventListener("click", () => {
-  history = [];
-  messages.innerHTML = "";
-  welcome.style.display = "block";
-  statusLine.textContent = "Yeni sohbet hazır";
-});
-
-document.getElementById("menuBtn").addEventListener("click", () => {
-  document.getElementById("sidebar").classList.toggle("open");
-});
-
-const memoryButton = document.getElementById("memoryButton");
-
-if (memoryButton) {
-  memoryButton.addEventListener("click", () => {
-    const memory = localStorage.getItem("kerem_memory") || "";
-    const updated = prompt("KEREM AGENT hafızası:", memory);
-
-    if (updated !== null) {
-      localStorage.setItem("kerem_memory", updated);
-      alert("Hafıza kaydedildi!");
-    }
-  });
+function isEndpointConfigured() {
+  return Boolean(state.aiEndpoint && !state.aiEndpoint.includes("SENIN-WORKER-ADRESIN"));
 }
 
-const mic = document.getElementById("micBtn");
-const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (mic && SpeechRecognition) {
-  mic.addEventListener("click", () => {
-    const recognition = new SpeechRecognition();
-    recognition.lang = "tr-TR";
-
-    recognition.onresult = e => {
-      input.value = e.results[0][0].transcript;
-    };
-
-    recognition.start();
-  });
+function createId() {
+  return "s_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
 }
 
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
+
+function saveSessions() {
+  try {
+    localStorage.setItem(STORAGE_
