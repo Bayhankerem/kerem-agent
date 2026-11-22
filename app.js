@@ -9,6 +9,18 @@ const statusLine = document.getElementById("status");
 
 let history = [];
 
+// Demo başlangıç ekranını gizle
+if (welcome) welcome.style.display = "none";
+
+// Örnek soru butonlarını gizle
+document.querySelectorAll(".suggestion").forEach(button => {
+  button.style.display = "none";
+});
+
+// Henüz hazır olmayan hafıza butonunu gizle
+const memoryButton = document.getElementById("memoryButton");
+if (memoryButton) memoryButton.style.display = "none";
+
 function addMessage(text, who) {
   const el = document.createElement("div");
   el.className = "message " + who;
@@ -23,19 +35,29 @@ form.addEventListener("submit", async (e) => {
   const text = input.value.trim();
   if (!text) return;
 
-  welcome.style.display = "none";
+  if (welcome) welcome.style.display = "none";
+
   addMessage(text, "user");
+
   input.value = "";
   input.style.height = "auto";
 
-  history.push({ role: "user", content: text });
+  history.push({
+    role: "user",
+    content: text
+  });
+
   statusLine.textContent = "KEREM AGENT düşünüyor...";
 
   try {
     const response = await fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history })
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messages: history
+      })
     });
 
     const data = await response.json();
@@ -44,54 +66,69 @@ form.addEventListener("submit", async (e) => {
       throw new Error(data.error || "Sunucu hatası");
     }
 
-    const reply = data.reply || "Yanıt alınamadı.";
-    history.push({ role: "assistant", content: reply });
+    const reply = data.reply;
+
+    if (!reply) {
+      throw new Error("Boş yanıt alındı.");
+    }
+
+    history.push({
+      role: "assistant",
+      content: reply
+    });
+
     addMessage(reply, "agent");
     statusLine.textContent = "KEREM AGENT hazır";
+
   } catch (error) {
-    addMessage("Bağlantı hatası: " + error.message, "agent");
+    addMessage(
+      "Bağlantı hatası: " + error.message,
+      "agent"
+    );
+
     statusLine.textContent = "Bağlantı kontrol edilmeli";
   }
 });
 
 input.addEventListener("input", () => {
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 130) + "px";
+  input.style.height =
+    Math.min(input.scrollHeight, 130) + "px";
 });
 
-document.querySelectorAll(".suggestion").forEach(b =>
-  b.addEventListener("click", () => {
-    input.value = b.textContent.replace(/^.{1,3}/, "").trim();
-    form.requestSubmit();
-  })
-);
-
+// Yeni sohbet
 document.getElementById("newChat").addEventListener("click", () => {
   messages.innerHTML = "";
   history = [];
-  welcome.style.display = "block";
+
+  if (welcome) welcome.style.display = "none";
+
+  statusLine.textContent = "KEREM AGENT hazır";
 });
 
-document.getElementById("menuBtn").addEventListener("click", () =>
-  document.getElementById("sidebar").classList.toggle("open")
-);
+// Menü
+document.getElementById("menuBtn").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.toggle("open");
+});
 
-document.getElementById("memoryButton").addEventListener("click", () =>
-  alert("Hafıza sistemi sonraki sürümde eklenecek.")
-);
-
+// Sesli mesaj
 const mic = document.getElementById("micBtn");
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const SpeechRecognition =
+  window.SpeechRecognition ||
+  window.webkitSpeechRecognition;
 
 if (SpeechRecognition) {
   mic.addEventListener("click", () => {
     const rec = new SpeechRecognition();
+
     rec.lang = "tr-TR";
     rec.interimResults = false;
+
     mic.classList.add("listening");
     statusLine.textContent = "Dinliyorum...";
 
-    rec.onresult = e => {
+    rec.onresult = (e) => {
       input.value = e.results[0][0].transcript;
     };
 
@@ -107,11 +144,12 @@ if (SpeechRecognition) {
     rec.start();
   });
 } else {
-  mic.addEventListener("click", () =>
-    alert("Ses tanıma bu tarayıcıda desteklenmiyor.")
-  );
+  mic.addEventListener("click", () => {
+    alert("Ses tanıma bu tarayıcıda desteklenmiyor.");
+  });
 }
 
+// PWA
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
