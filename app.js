@@ -8,56 +8,53 @@ const welcome = document.getElementById("welcome");
 const statusLine = document.getElementById("status");
 
 let history = [];
+let chats = JSON.parse(localStorage.getItem("kerem_chats") || "[]");
 
-// Demo başlangıç ekranını gizle
-if (welcome) welcome.style.display = "none";
-
-// Örnek soru butonlarını gizle
-document.querySelectorAll(".suggestion").forEach(button => {
-  button.style.display = "none";
-});
-
-// Henüz hazır olmayan hafıza butonunu gizle
-const memoryButton = document.getElementById("memoryButton");
-if (memoryButton) memoryButton.style.display = "none";
-
-function addMessage(text, who) {
+function addMessage(content, role) {
   const el = document.createElement("div");
-  el.className = "message " + who;
-  el.textContent = text;
+  el.className = "message " + role;
+  el.textContent = content;
   messages.appendChild(el);
-  el.scrollIntoView({ behavior: "smooth", block: "end" });
+  el.scrollIntoView({ behavior: "smooth" });
 }
 
-form.addEventListener("submit", async (e) => {
+function saveChats() {
+  localStorage.setItem("kerem_chats", JSON.stringify(chats));
+}
+
+function saveCurrentChat() {
+  if (!history.length) return;
+
+  const chat = {
+    id: Date.now(),
+    title: history.find(m => m.role === "user")?.content.slice(0, 35) || "Yeni sohbet",
+    messages: history
+  };
+
+  chats.unshift(chat);
+  chats = chats.slice(0, 30);
+  saveChats();
+}
+
+form.addEventListener("submit", async e => {
   e.preventDefault();
 
   const text = input.value.trim();
   if (!text) return;
 
-  if (welcome) welcome.style.display = "none";
+  welcome.style.display = "none";
 
   addMessage(text, "user");
+  history.push({ role: "user", content: text });
 
   input.value = "";
-  input.style.height = "auto";
-
-  history.push({
-    role: "user",
-    content: text
-  });
-
   statusLine.textContent = "KEREM AGENT düşünüyor...";
 
   try {
     const response = await fetch(API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        messages: history
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history })
     });
 
     const data = await response.json();
@@ -66,90 +63,80 @@ form.addEventListener("submit", async (e) => {
       throw new Error(data.error || "Sunucu hatası");
     }
 
-    const reply = data.reply;
-
-    if (!reply) {
-      throw new Error("Boş yanıt alındı.");
+    if (!data.reply) {
+      throw new Error("Yanıt alınamadı.");
     }
 
     history.push({
       role: "assistant",
-      content: reply
+      content: data.reply
     });
 
-    addMessage(reply, "agent");
+    addMessage(data.reply, "agent");
+    saveCurrentChat();
+
     statusLine.textContent = "KEREM AGENT hazır";
 
   } catch (error) {
-    addMessage(
-      "Bağlantı hatası: " + error.message,
-      "agent"
-    );
-
-    statusLine.textContent = "Bağlantı kontrol edilmeli";
+    addMessage("Hata: " + error.message, "agent");
+    statusLine.textContent = "Bağlantı hatası";
   }
 });
 
 input.addEventListener("input", () => {
   input.style.height = "auto";
-  input.style.height =
-    Math.min(input.scrollHeight, 130) + "px";
+  input.style.height = Math.min(input.scrollHeight, 130) + "px";
 });
 
-// Yeni sohbet
+document.querySelectorAll(".suggestion").forEach(button => {
+  button.addEventListener("click", () => {
+    input.value = button.textContent.trim();
+    form.requestSubmit();
+  });
+});
+
 document.getElementById("newChat").addEventListener("click", () => {
-  messages.innerHTML = "";
   history = [];
-
-  if (welcome) welcome.style.display = "none";
-
-  statusLine.textContent = "KEREM AGENT hazır";
+  messages.innerHTML = "";
+  welcome.style.display = "block";
+  statusLine.textContent = "Yeni sohbet hazır";
 });
 
-// Menü
 document.getElementById("menuBtn").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
 
-// Sesli mesaj
-const mic = document.getElementById("micBtn");
+const memoryButton = document.getElementById("memoryButton");
 
-const SpeechRecognition =
-  window.SpeechRecognition ||
-  window.webkitSpeechRecognition;
+if (memoryButton) {
+  memoryButton.addEventListener("click", () => {
+    const memory = localStorage.getItem("kerem_memory") || "";
+    const updated = prompt("KEREM AGENT hafızası:", memory);
 
-if (SpeechRecognition) {
-  mic.addEventListener("click", () => {
-    const rec = new SpeechRecognition();
-
-    rec.lang = "tr-TR";
-    rec.interimResults = false;
-
-    mic.classList.add("listening");
-    statusLine.textContent = "Dinliyorum...";
-
-    rec.onresult = (e) => {
-      input.value = e.results[0][0].transcript;
-    };
-
-    rec.onerror = () => {
-      statusLine.textContent = "Mikrofon kullanılamadı.";
-    };
-
-    rec.onend = () => {
-      mic.classList.remove("listening");
-      statusLine.textContent = "KEREM AGENT hazır";
-    };
-
-    rec.start();
-  });
-} else {
-  mic.addEventListener("click", () => {
-    alert("Ses tanıma bu tarayıcıda desteklenmiyor.");
+    if (updated !== null) {
+      localStorage.setItem("kerem_memory", updated);
+      alert("Hafıza kaydedildi!");
+    }
   });
 }
 
-// PWA
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+const mic = document.getElementById("micBtn");
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (mic && SpeechRecognition) {
+  mic.addEventListener("click", () => {
+    const recognition = new SpeechRecognition();
+    recognition.lang = "tr-TR";
+
+    recognition.onresult = e => {
+      input.value = e.results[0][0].transcript;
+    };
+
+    recognition.start();
+  });
+}
+
+if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
